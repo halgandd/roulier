@@ -13,7 +13,7 @@ class GlsEuGetabel(CarrierGetLabel):
     """Implementation for GLS via it's REST WebService."""
 
     ws_url = "https://api.gls-group.eu/public/v1/shipments"
-    ws_test_url = "https://api-qs1.gls-group.eu/public/v1/shipments"
+    ws_test_url = "https://shipit-wbm-test01.gls-group.eu:8443/backend/rs/shipments"
     encoder = GlsEuEncoder
     decoder = GlsEuDecoderGetLabel
     transport = GlsEuTransport

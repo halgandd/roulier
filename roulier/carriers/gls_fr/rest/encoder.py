@@ -19,35 +19,73 @@ class GlsEuEncoderBase(Encoder):
         Transforms standard roulier input into gls specific request data
         """
         body = {
-            "shipperId": "%s %s"
-            % (data["service"]["customerId"], data["service"]["agencyId"]),
-            "shipmentDate": "%s" % data["service"]["shippingDate"],
-            "labelFormat": data["service"]["labelFormat"],
-            "labelSize": data["service"]["labelSize"],
+            "Shipment": {
+                "Product": data['service']['product'],
+                "ShippingDate": "%s" % data["service"]["shippingDate"],
+                "ShipmentUnit": [{
+                    "Weight": data['parcels'][0]['weight'],
+                }]
+            },
+            "PrintingOptions": {
+                "ReturnLabels": {
+                    "TemplateSet": "NONE",
+                    "LabelFormat": data["service"]["labelFormat"]
+                },
+            },
         }
+        if data['service']['service'] == 'service_shopdelivery':
+            body["Shipment"]["Service"] = [{
+                "ShopDelivery": {
+                    "ServiceName": data['service']['service'],
+                    "ParcelShopID": data['service']['shop_id'],
+                }
+            }]
+        elif data['service']['service'] == 'service_shopreturn':
+            body["Shipment"]["Service"] = [{
+                "ShopReturn": {
+                    "ServiceName": data['service']['service'],
+                    "NumberOfLabels": data['service']['number_of_parcel'],
+                }
+            }]
+        elif data['service']['service'] in ('service_pickandship','service_pickandreturn'):
+            body["Shipment"]["Service"] = [{
+                "PickAndShip": {
+                    "ServiceName": data['service']['service'],
+                    "PickupDate": data['service']['pickup_date'],
+                }
+            }]
+        else:
+            if data['service']['service'] :
+                body["Shipment"]["Service"] = [{
+                    "Service": {
+                        "ServiceName": data['service']['service'] or "",
+                    }
+                }]
+
         if data["service"].get("incoterm"):
-            body["incoterm"] = data["service"]["incoterm"]
-        body["addresses"] = self._transforms_addresses(data, body)
-        if "return" in body["addresses"] and data.get("return_weight"):
-            body["returns"] = {"weight": "%.2f" % data["return_weight"]}
+            body["Shipment"]["IncotermCode"] = data["service"]["incoterm"]
+        body["Shipment"].update(self._transforms_addresses(data, body))
+        body["Shipment"]["Shipper"]["ContactID"] = data["service"]["customerId"]
+        # if "return" in body["addresses"] and data.get("return_weight"):
+        #     body["returns"] = {"weight": "%.2f" % data["return_weight"]}
         references = [
             ref.strip()
             for ref in (
-                data.get("reference1", ""),
-                data.get("reference2", ""),
-                data.get("reference3", ""),
+                data["service"].get("reference1", ""),
+                data["service"].get("reference2", ""),
+                data["service"].get("reference3", ""),
             )
             if ref.strip()
         ]
         if references:
-            body["references"] = references[:2]
-        if data.get("returns") and "return" in body["addresses"]:
-            body["returns"] = [
-                {"weight": "%.2f" % ret["weight"]}
-                for ret in data.get("returns")
-                if ret.get("weight")
-            ]
-        body["parcels"] = self._transforms_parcels(data, body)
+            body["Shipment"]["ShipmentReference"] = references
+        # if data.get("returns") and "return" in body["addresses"]:
+        #     body["returns"] = [
+        #         {"weight": "%.2f" % ret["weight"]}
+        #         for ret in data.get("returns")
+        #         if ret.get("weight")
+        #     ]
+        # body["parcels"] = self._transforms_parcels(data, body)
         return {
             "body": body,
             "auth": data["auth"],
@@ -59,50 +97,50 @@ class GlsEuEncoderBase(Encoder):
         Transforms standard roulier addresses input into gls specific request data
         """
         addresses = {}
-        available_addr = (("to_address", "delivery"),)
+        available_addr = (("to_address", "Consignee", "Address"),)
         if data.get("from_address"):
-            available_addr += (("from_address", "alternativeShipper"),)
+            available_addr += (("from_address", "Shipper", "AlternativeShipperAddress"),)
         if data.get("return_address"):
-            available_addr += (("return_address", "return"),)
+            available_addr += (("return_address", "return", "Address"),)
         if data.get("pickup_address"):
-            available_addr += (("pickup_address", "pickup"),)
+            available_addr += (("pickup_address", "pickup", "Address"),)
 
         addr_req_fields = (
-            ("name", "name1"),  # Raison sociale ou nom destinataire
+            ("name", "Name1"),  # Raison sociale ou nom destinataire
             (
                 "street1",
-                "street1",
+                "Street",
             ),  # Adresse principale => si adresse sur plusieurs lignes, renseigner le nom de la rue ICI
             (
                 "country",
-                "country",
+                "CountryCode",
             ),  # deux lettres du code pays -> ISO 3166-1-alpha-2 (ex: "FR")
             (
                 "zip",
-                "zipCode",
+                "ZIPCode",
             ),  # code postal (cas particulier: province pour l'Irlande)
-            ("city", "city"),  # Ville
+            ("city", "City"),  # Ville
         )
         addr_opt_fields = (
             (
                 "id",
                 "id",
             ),  # Identifiant adresse (référence utilisable pour recherche track&trace sur notre site YourGLS)
-            ("street2", "name2"),  # Complément d'adresse
-            ("street3", "name3"),  # Complément d'adresse
+            ("street2", "Name2"),  # Complément d'adresse
+            ("street3", "Name3"),  # Complément d'adresse
             (
                 "blockNo1",
                 "blockNo1",
             ),  # Numéro de la maison ou de l'immeuble dans la rue - apparait à la suite du champ "Street1" sur l'étiquette - Ne renseigner QUE si non présent dans les informations mises en "Street1"
-            ("contact", "contact"),  # Nom d'un contact
-            ("phone", "phone"),  # Numéro de téléphone : obligatoire si pas de mobile
+            ("contact", "ContactPerson"),  # Nom d'un contact
+            ("phone", "FixedLinePhonenumber"),  # Numéro de téléphone : obligatoire si pas de mobile
             (
                 "mobile",
-                "mobile",
+                "MobilePhoneNumber",
             ),  # Numéro de téléphone mobile : obligatoire si pas de fixe
-            ("email", "email"),  # Adresse E-mail - /!\Obligatoire en BtoC
+            ("email", "eMail"),  # Adresse E-mail - /!\Obligatoire en BtoC
         )
-        for from_addr, to_addr in available_addr:
+        for from_addr, to_addr, field_addr in available_addr:
             addr = data.get(from_addr)
             if not addr:
                 continue
@@ -110,19 +148,20 @@ class GlsEuEncoderBase(Encoder):
             if addr["company"] and addr["name"]:
                 addr["contact"] = addr["name"]
                 addr["name"] = addr["company"]
-            addresses[to_addr] = dict(
+            addresses[to_addr] = dict()
+            addresses[to_addr][field_addr] = dict(
                 (to_field, addr[from_field]) for from_field, to_field in addr_req_fields
             )
-            addresses[to_addr]["country"] = addresses[to_addr]["country"].upper()
-            addresses[to_addr].update(
+            addresses[to_addr][field_addr]["CountryCode"] = addresses[to_addr][field_addr]["CountryCode"].upper()
+            addresses[to_addr][field_addr].update(
                 dict(
                     (to_field, addr[from_field])
                     for from_field, to_field in addr_opt_fields
                     if addr.get(from_field)
                 )
             )
-            if addresses[to_addr]["country"] == "IR" and addr.get("province"):
-                addresses[to_addr]["province"] = addr.get("province")
+            if addresses[to_addr][field_addr]["CountryCode"] == "IR" and addr.get("province"):
+                addresses[to_addr][field_addr]["province"] = addr.get("province")
         return addresses
 
     def _transforms_parcels(self, data, body):

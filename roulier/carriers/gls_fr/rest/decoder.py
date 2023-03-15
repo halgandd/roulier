@@ -3,6 +3,7 @@
 import base64
 from datetime import datetime
 from lxml import objectify
+from pprint import pprint
 
 from roulier.codec import DecoderGetLabel
 
@@ -12,29 +13,30 @@ from .constants import SERVICE_PandS
 
 class GlsEuDecoderGetLabel(DecoderGetLabel):
     def decode(self, response, input_payload):
-        without_label = "pickup" in input_payload["body"]["addresses"]
+        pprint(response)
         """
         Decodes JSON returned by GLS and formats it to roulier standardization
         """
         body = response["body"]
         parcels = []
         annexes = []
-        for gls_parcel in body["parcels"]:
+        cc = 0
+        for gls_parcel in body["CreatedShipment"]["ParcelData"]:
             parcel = {
-                "id": gls_parcel["parcelNumber"],
-                "reference": gls_parcel["parcelNumber"],
+                "id": gls_parcel["ParcelNumber"],
+                "reference": gls_parcel["ParcelNumber"],
                 "tracking": {
-                    "number": gls_parcel["trackId"],
-                    "url": gls_parcel["location"],
+                    "number": gls_parcel["TrackID"],
+                    "url": gls_parcel["TrackID"],
                     "partner": "",
                 },
-            }
-            if not without_label:
-                parcel["label"] = {
-                    "data": body["labels"][len(parcels)],
+                "label": {
+                    "data": body["CreatedShipment"]["PrintData"][cc]["Data"],
                     "name": "label_1",
-                    "type": input_payload["body"].get("labelFormat", "PDF"),
+                    "type": body["CreatedShipment"]["PrintData"][cc]["LabelFormat"],
                 }
+            }
+            cc += 1
             parcels.append(parcel)
         self.result["parcels"] += parcels
         self.result["annexes"] += annexes

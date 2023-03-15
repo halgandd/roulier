@@ -1,5 +1,6 @@
 """ Implement GLS WS transport via REST solution"""
-
+import base64
+import pprint
 from jinja2 import Environment, PackageLoader
 import json
 import logging
@@ -20,11 +21,13 @@ class GlsEuTransport(RequestsTransport):
         return json.dumps(payload["body"])
 
     def _get_requests_headers(self, payload=None):
+        auth = "%s:%s"%(payload['auth']['login'],payload['auth']['password'])
+        auth = base64.encodestring(auth.encode('utf8')).decode("utf-8")
         return {
-            "Content-Type": "application/json;charset=UTF-8",
-            "Accept": "application/json",
+            "Content-Type": "application/glsVersion1+json",
+            "Accept": "application/glsVersion1+json,application/json",
             "Accept-Encoding": "gzip,deflate",
-            "Accept-Language": payload.pop("language", "en") if payload else "en",
+            "Authorization": "Basic "+auth,
         }
 
     def _get_requests_auth(self, payload):
@@ -37,6 +40,7 @@ class GlsEuTransport(RequestsTransport):
 
     def _handle_errors(self, response):
         """Handle reponse in case of ERROR 400 type."""
+        pprint.pprint(response.__dict__)
         try:
             gls_errors = response.json()["errors"]
         except:
